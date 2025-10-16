@@ -171,7 +171,7 @@ make run-dev
 ### 3) Създай роля и база + разширение за UUID
 Приложението използва default gen_random_uuid(); нужна е pgcrypto.
 ``` bash
-  # Влез в psql (кореновата/локална роля обикновено е текущият ти macOS потребител)
+  # Влез в psql
   psql postgres
 
   -- В psql:
