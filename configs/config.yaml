@@ -1,0 +1,74 @@
+# VM Manager API Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"  # debug, release, test
+  read_timeout: "30s"
+  write_timeout: "30s"
+  shutdown_timeout: "5s"
+
+  cors:
+    allow_origins: ["*"]
+    allow_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers: ["Content-Type", "Authorization", "X-Request-ID", "X-API-Key"]
+    expose_headers: ["X-Request-ID"]
+    allow_credentials: false
+    max_age: 3600
+
+  rate_limit:
+    enabled: true
+    rps: 100.0
+    burst: 200
+    cleanup: "1m"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "vmmanager"
+  password: "password123"
+  database: "vmmanager2"
+  ssl_mode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "1h"
+  migrations_path: "./internal/database/migrations"
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  timeout: "5s"
+  enabled: false
+
+logging:
+  level: "info"        # debug, info, warn, error
+  format: "json"       # json, console
+  output: "stdout"     # stdout, stderr, file, both
+  filename: "logs/vm-manager.log"
+  max_size: 100        # MB
+  max_backups: 3
+  max_age: 7           # days
+  compress: true
+
+auth:
+  enabled: false
+  jwt_secret: "your-jwt-secret-key-change-in-production"
+  jwt_expiration: "24h"
+  api_key_header: "X-API-Key"
+  api_keys:
+    - "vm-manager-dev-key-123"
+    - "vm-manager-api-key-456"
+
+metrics:
+  enabled: true
+  path: "/metrics"
+  namespace: "vm_manager"
+  subsystem: "api"
+
+limits:
+  max_cpu_cores: 64
+  max_ram_mb: 262144   # 256GB
+  max_disk_gb: 10240   # 10TB
+  max_vms: 1000

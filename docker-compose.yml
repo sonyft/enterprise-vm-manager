@@ -1,0 +1,190 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: vm-manager-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vmmanager
+      POSTGRES_USER: vmmanager
+      POSTGRES_PASSWORD: password123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./internal/database/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    networks:
+      - vm-manager-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vmmanager -d vmmanager"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis Cache (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: vm-manager-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ""
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - vm-manager-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - with-cache
+
+  # VM Manager API
+  api:
+    build: .
+    container_name: vm-manager-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://vmmanager:password123@postgres:5432/vmmanager?sslmode=disable
+      - VM_MANAGER_SERVER_HOST=0.0.0.0
+      - VM_MANAGER_SERVER_PORT=8080
+      - VM_MANAGER_SERVER_MODE=release
+      - VM_MANAGER_LOGGING_LEVEL=info
+      - VM_MANAGER_LOGGING_FORMAT=json
+      - VM_MANAGER_METRICS_ENABLED=true
+      - VM_MANAGER_AUTH_ENABLED=false
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configs:/app/configs:ro
+      - api_logs:/app/logs
+    networks:
+      - vm-manager-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vm-manager.rule=Host(`vm-manager.localhost`)"
+      - "traefik.http.services.vm-manager.loadbalancer.server.port=8080"
+
+  # pgAdmin for database management (development only)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: vm-manager-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@vmmanager.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - vm-manager-network
+    profiles:
+      - dev-tools
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vm-manager-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployments/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - vm-manager-network
+    profiles:
+      - monitoring
+
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vm-manager-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployments/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deployments/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - vm-manager-network
+    profiles:
+      - monitoring
+
+  # Traefik reverse proxy (optional)
+  traefik:
+    image: traefik:v3.0
+    container_name: vm-manager-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8081:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - vm-manager-network
+    profiles:
+      - proxy
+
+volumes:
+  postgres_data:
+    name: vm-manager-postgres-data
+  redis_data:
+    name: vm-manager-redis-data
+  api_logs:
+    name: vm-manager-api-logs
+  pgadmin_data:
+    name: vm-manager-pgadmin-data
+  prometheus_data:
+    name: vm-manager-prometheus-data
+  grafana_data:
+    name: vm-manager-grafana-data
+
+networks:
+  vm-manager-network:
+    name: vm-manager-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

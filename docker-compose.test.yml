@@ -1,0 +1,25 @@
+# Test Docker Compose configuration  
+version: '3.9'
+
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: vm-manager-postgres-test
+    environment:
+      POSTGRES_DB: vmmanager_test
+      POSTGRES_USER: vmmanager_test
+      POSTGRES_PASSWORD: test123
+    ports:
+      - "5433:5432"
+    networks:
+      - vm-manager-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vmmanager_test -d vmmanager_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+networks:
+  vm-manager-test-network:
+    name: vm-manager-test-network
+    driver: bridge

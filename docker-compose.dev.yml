@@ -1,0 +1,27 @@
+# Development Docker Compose override
+version: '3.9'
+
+services:
+  api:
+    build:
+      context: .
+      target: builder
+    environment:
+      - VM_MANAGER_SERVER_MODE=debug
+      - VM_MANAGER_LOGGING_LEVEL=debug
+      - VM_MANAGER_LOGGING_FORMAT=console
+      - VM_MANAGER_AUTH_ENABLED=false
+    volumes:
+      - .:/app
+      - api_logs:/app/logs
+    command: ["./vm-manager-server", "-config", "/app/configs/config.yaml"]
+    profiles: []
+
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=vmmanager_dev
+
+  pgadmin:
+    profiles: []  # Always include in dev
